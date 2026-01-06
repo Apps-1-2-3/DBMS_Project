@@ -9,6 +9,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from pydantic import BaseModel
@@ -23,7 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:password@localhost/smarthostel")
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:System123@localhost/smarthostel")
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-change-me-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
@@ -46,7 +47,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -344,6 +345,8 @@ async def mark_attendance(data: AttendanceCreate, db: Session = Depends(get_db),
             "type": attendance.type.value, "studentid": attendance.studentid}
 
 
+
+
 # ==================== MEAL ROUTES ====================
 
 @app.get("/api/mealmenu")
@@ -402,55 +405,73 @@ async def get_hostels(db: Session = Depends(get_db), current_user: User = Depend
 
 @app.get("/api/analytics", response_model=AnalyticsResponse)
 async def get_analytics(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Calculate attendance stats for today
+
     today = datetime.utcnow().date()
+
+    # -------- Attendance --------
     total_students = db.query(Student).count()
-    
+
     present_today = db.query(Attendance).filter(
         Attendance.time_stamp >= datetime.combine(today, datetime.min.time()),
         Attendance.type == AttendanceType.IN
     ).distinct(Attendance.studentid).count()
-    
-    present_pct = (present_today / total_students * 100) if total_students > 0 else 0
+
+    present_pct = (present_today / total_students * 100) if total_students else 0
     absent_pct = 100 - present_pct
-    
-    # Calculate meal opt-out stats
-    today_choices = db.query(MealChoice).filter(
+
+    # -------- Meal Opt-out --------
+    choices = db.query(MealChoice).filter(
         MealChoice.date >= datetime.combine(today, datetime.min.time()),
         MealChoice.opted_out == True
     ).all()
-    
-    breakfast_optout = len([c for c in today_choices if c.meal_time == MealTime.BREAKFAST])
-    lunch_optout = len([c for c in today_choices if c.meal_time == MealTime.LUNCH])
-    dinner_optout = len([c for c in today_choices if c.meal_time == MealTime.DINNER])
-    
-    # Calculate hostel occupancy
-    boys_hostel = db.query(Hostel).filter(Hostel.type == HostelType.BOYS).first()
-    girls_hostel = db.query(Hostel).filter(Hostel.type == HostelType.GIRLS).first()
-    
-    boys_capacity = boys_hostel.total_rooms * 2 if boys_hostel else 100
-    girls_capacity = girls_hostel.total_rooms * 2 if girls_hostel else 100
-    
-    boys_assigned = db.query(RoomAssignment).join(Room).join(Hostel).filter(
-        Hostel.type == HostelType.BOYS, RoomAssignment.is_active == True
-    ).count()
-    girls_assigned = db.query(RoomAssignment).join(Room).join(Hostel).filter(
-        Hostel.type == HostelType.GIRLS, RoomAssignment.is_active == True
-    ).count()
-    
+
+    breakfast = len([c for c in choices if c.meal_time == MealTime.BREAKFAST])
+    lunch = len([c for c in choices if c.meal_time == MealTime.LUNCH])
+    dinner = len([c for c in choices if c.meal_time == MealTime.DINNER])
+
+    # -------- Hostel Occupancy --------
+    boys_total = db.execute(text("""
+        SELECT COUNT(*) FROM room r
+        JOIN hostels h ON r.hostel_no = h.hostel_no
+        WHERE h.type = 'BOYS'
+    """)).scalar()
+
+    girls_total = db.execute(text("""
+        SELECT COUNT(*) FROM room r
+        JOIN hostels h ON r.hostel_no = h.hostel_no
+        WHERE h.type = 'GIRLS'
+    """)).scalar()
+
+    boys_occupied = db.execute(text("""
+        SELECT COUNT(DISTINCT r.room_no) FROM roomassignedto ra
+        JOIN room r ON ra.room_no = r.room_no
+        JOIN hostels h ON r.hostel_no = h.hostel_no
+        WHERE ra.is_active = 1 AND h.type = 'BOYS'
+    """)).scalar()
+
+    girls_occupied = db.execute(text("""
+        SELECT COUNT(DISTINCT r.room_no) FROM roomassignedto ra
+        JOIN room r ON ra.room_no = r.room_no
+        JOIN hostels h ON r.hostel_no = h.hostel_no
+        WHERE ra.is_active = 1 AND h.type = 'GIRLS'
+    """)).scalar()
+
+    boys_pct = (boys_occupied / boys_total * 100) if boys_total else 0
+    girls_pct = (girls_occupied / girls_total * 100) if girls_total else 0
+
     return {
         "attendance": {
             "present": round(present_pct),
             "absent": round(absent_pct)
         },
         "mealOptout": {
-            "breakfast": round((breakfast_optout / total_students * 100) if total_students > 0 else 0),
-            "lunch": round((lunch_optout / total_students * 100) if total_students > 0 else 0),
-            "dinner": round((dinner_optout / total_students * 100) if total_students > 0 else 0)
+            "breakfast": round(breakfast),
+            "lunch": round(lunch),
+            "dinner": round(dinner)
         },
         "hostelOccupancy": {
-            "boys": round((boys_assigned / boys_capacity * 100) if boys_capacity > 0 else 0),
-            "girls": round((girls_assigned / girls_capacity * 100) if girls_capacity > 0 else 0)
+            "boys": round(boys_pct),
+            "girls": round(girls_pct)
         }
     }
 
