@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { api, MealMenu } from '@/lib/api';
 import { Calendar, Clock, Coffee, Sun, Moon, UtensilsCrossed } from 'lucide-react';
 
-const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
 const StudentDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -18,19 +18,27 @@ const StudentDashboard: React.FC = () => {
   const today = DAYS[new Date().getDay()];
 
   useEffect(() => {
-    const fetchMenu = async () => {
-      try {
-        const menu = await api.meals.getMenu(today);
-        setTodayMenu(menu);
-      } catch (error) {
-        console.error('Failed to fetch menu:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const fetchMenu = async () => {
+    try {
+      const menu = await api.meals.getMenu(today);
 
-    fetchMenu();
-  }, [today]);
+      // fallback if empty
+      if (!menu || menu.length === 0) {
+        const allMenu = await api.meals.getMenu();
+        setTodayMenu(allMenu);
+      } else {
+        setTodayMenu(menu);
+      }
+    } catch (error) {
+      console.error("Failed to fetch menu:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  fetchMenu();
+}, [today]);
+
 
   const getMealIcon = (mealTime: string) => {
     switch (mealTime) {
