@@ -3,6 +3,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { AttendancePieChart } from '@/components/charts/AttendancePieChart';
 import { MealOptoutChart } from '@/components/charts/MealOptoutChart';
 import { HostelOccupancyChart } from '@/components/charts/HostelOccupancyChart';
+import { Hostel } from "@/lib/api";
 import { RealTimeTable } from '@/components/RealTimeTable';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -66,6 +67,14 @@ const AdminDashboard: React.FC = () => {
     { key: 'room_no' as keyof Student, header: 'Room' },
     { key: 'hostel_no' as keyof Student, header: 'Hostel' },
   ];
+
+  const hostelColumns = [
+  { key: 'hostel_no' as keyof Hostel, header: 'Hostel No' },
+  { key: 'hostel_name' as keyof Hostel, header: 'Hostel Name' },
+  { key: 'type' as keyof Hostel, header: 'Type' },
+  { key: 'total_rooms' as keyof Hostel, header: 'Total Rooms' },
+  ];
+
 
   const employeeColumns = [
     { key: 'ssn' as keyof Employee, header: 'SSN' },
@@ -179,6 +188,10 @@ const AdminDashboard: React.FC = () => {
           <CardContent>
             <Tabs defaultValue="attendance">
               <TabsList className="mb-4">
+                <TabsTrigger value="hostels" className="gap-2">
+                  <Building2 className="h-4 w-4" />
+                  Hostels
+                </TabsTrigger>
                 <TabsTrigger value="attendance" className="gap-2">
                   <ClipboardCheck className="h-4 w-4" />
                   Attendance
@@ -202,6 +215,15 @@ const AdminDashboard: React.FC = () => {
                 />
               </TabsContent>
 
+              <TabsContent value="hostels">
+                <RealTimeTable<Hostel>
+                  fetchData={api.admin.getHostels}
+                  columns={hostelColumns}
+                  keyField="hostel_no"
+                  emptyMessage="No hostels found"
+                />
+              </TabsContent>
+
               <TabsContent value="students">
                 <RealTimeTable<Student>
                   fetchData={api.students.getAll}
@@ -219,6 +241,8 @@ const AdminDashboard: React.FC = () => {
                   emptyMessage="No employees found"
                 />
               </TabsContent>
+
+
             </Tabs>
           </CardContent>
         </Card>
